@@ -1,0 +1,18 @@
+{
+  "name": "bluetech-sign-microservices",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "frontend",
+    "integration-kit/react"
+  ],
+  "scripts": {
+    "dev": "docker compose up --build",
+    "down": "docker compose down",
+    "lint": "npm run -ws lint --if-present",
+    "test": "npm run -ws test --if-present",
+    "test:contract": "node --test tests/contract/*.mjs"
+  }
+}

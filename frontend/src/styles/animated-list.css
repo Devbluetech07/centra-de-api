@@ -1,0 +1,60 @@
+.animated-list__container {
+  position: relative;
+}
+
+.animated-list__scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.animated-list__item-wrapper {
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.animated-list__item {
+  border: 1px solid #245076;
+  border-radius: 10px;
+  padding: 10px;
+  background: #0f2342;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.animated-list__item:hover {
+  border-color: #3bc5e4;
+  transform: translateY(-1px);
+}
+
+.animated-list__item.selected {
+  border-color: #41d9ee;
+  box-shadow: 0 0 0 1px rgba(65, 217, 238, 0.35) inset;
+}
+
+.animated-list__gradient-top,
+.animated-list__gradient-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 34px;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.animated-list__gradient-top {
+  top: 0;
+  background: linear-gradient(180deg, rgba(9, 29, 53, 0.95), rgba(9, 29, 53, 0));
+}
+
+.animated-list__gradient-bottom {
+  bottom: 0;
+  background: linear-gradient(0deg, rgba(9, 29, 53, 0.95), rgba(9, 29, 53, 0));
+}
+
+.animated-list__no-scrollbar {
+  scrollbar-width: none;
+}
+
+.animated-list__no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

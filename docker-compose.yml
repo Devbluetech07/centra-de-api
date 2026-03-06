@@ -1,0 +1,141 @@
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bluetech_sign}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_HOST_PORT:-25432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./packages/database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-bluetech_sign}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:latest
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "${ADMINER_HOST_PORT:-28080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-26379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_HOST_PORT:-29000}:${MINIO_PORT:-9000}"
+      - "${MINIO_CONSOLE_HOST_PORT:-29001}:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}; do
+        echo 'waiting for minio...';
+        sleep 2;
+      done;
+      mc mb -p local/${BUCKET_ASSINATURAS:-bluetech-sign} || true;
+      echo placeholder > /tmp/.keep;
+      mc cp /tmp/.keep local/${BUCKET_ASSINATURAS:-bluetech-sign}/${ASSINATURAS_PREFIX:-assinatura}/.keep || true;
+      mc cp /tmp/.keep local/${BUCKET_ASSINATURAS:-bluetech-sign}/${DOCUMENTOS_PREFIX:-documento}/.keep || true;
+      mc cp /tmp/.keep local/${BUCKET_ASSINATURAS:-bluetech-sign}/${SELFIES_PREFIX:-selfie_documento}/.keep || true;
+      exit 0;
+      "
+
+  gateway:
+    build: ./services/gateway
+    env_file: .env
+    ports:
+      - "${GATEWAY_HOST_PORT:-23000}:${GATEWAY_PORT:-3000}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ms-assinatura:
+    build: ./services/ms-assinatura
+    env_file: .env
+    environment:
+      PORT: ${MS_ASSINATURA_PORT:-3001}
+    ports:
+      - "${MS_ASSINATURA_HOST_PORT:-23001}:${MS_ASSINATURA_PORT:-3001}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  ms-documento:
+    build: ./services/ms-documento
+    env_file: .env
+    environment:
+      PORT: ${MS_DOCUMENTO_PORT:-3002}
+    ports:
+      - "${MS_DOCUMENTO_HOST_PORT:-23002}:${MS_DOCUMENTO_PORT:-3002}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      ms-validator:
+        condition: service_started
+
+  ms-selfie-documento:
+    build: ./services/ms-selfie-documento
+    env_file: .env
+    environment:
+      PORT: ${MS_SELFIE_DOCUMENTO_PORT:-3004}
+    ports:
+      - "${MS_SELFIE_DOCUMENTO_HOST_PORT:-23004}:${MS_SELFIE_DOCUMENTO_PORT:-3004}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      ms-validator:
+        condition: service_started
+
+  ms-validator:
+    build: ./services/ms-validator
+    env_file: .env
+    ports:
+      - "${VALIDATOR_HOST_PORT:-28000}:${VALIDATOR_PORT:-8000}"
+
+  frontend:
+    build: ./frontend
+    env_file: .env
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      gateway:
+        condition: service_started
+
+volumes:
+  pgdata:
+  minio_data:

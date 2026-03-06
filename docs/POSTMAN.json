@@ -1,0 +1,27 @@
+﻿{
+  "info": {
+    "name": "BlueTech Sign APIs",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Gateway Health",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:3000/health"
+      }
+    },
+    {
+      "name": "Create Token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"App Mobile\",\n  \"scopes\": [\"documento:upload\"]\n}"
+        },
+        "url": "http://localhost:3000/api/v1/tokens"
+      }
+    }
+  ]
+}
