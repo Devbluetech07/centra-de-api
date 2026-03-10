@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valeris-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: valeris-backend
+  template:
+    metadata:
+      labels:
+        app: valeris-backend
+    spec:
+      containers:
+        - name: api
+          image: valeris-backend:latest
+          ports:
+            - containerPort: 3001

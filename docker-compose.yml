@@ -1,0 +1,165 @@
+name: central-de-api-v2
+
+services:
+  # ─────────────────────────────────────────
+  # PostgreSQL + pgvector
+  # ─────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: valeris
+      POSTGRES_USER: valeris
+      POSTGRES_PASSWORD: valerispass
+    ports:
+      - "127.0.0.1:5542:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./db/migrations/002_add_ai_tables.sql:/docker-entrypoint-initdb.d/002_add_ai_tables.sql:ro
+      - ./db/migrations/003_remove_plaintext_keys.sql:/docker-entrypoint-initdb.d/003_remove_plaintext_keys.sql:ro
+      - ./db/migrations/004_token_only_open_mode.sql:/docker-entrypoint-initdb.d/004_token_only_open_mode.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U valeris -d valeris"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - valeris-net
+
+  # ─────────────────────────────────────────
+  # Backend (Go/Gin)
+  # ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    image: central-de-api-v2-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: valeris
+      DB_USER: valeris
+      DB_PASSWORD: valerispass
+      JWT_SECRET: ${JWT_SECRET:-super-secret-change-in-production-32chars}
+      FRONTEND_URL: http://127.0.0.1:3200
+      FRONTEND_URLS: http://localhost:3200,http://127.0.0.1:3200
+      # Use Docker network DNS for stable storage connectivity.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      TOKEN_ONLY_MODE: ${TOKEN_ONLY_MODE:-true}
+      INTEGRATION_TOKENS: vl_bootstrap_change_me_please_rotate
+      ALLOW_PORTAL_DEMO_TOKEN: "false"
+      PORTAL_DEMO_TOKEN: ${PORTAL_DEMO_TOKEN:-portal-demo}
+    ports:
+      - "127.0.0.1:3201:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - valeris-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ─────────────────────────────────────────
+  # Frontend (Flutter Web)
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend-web
+      dockerfile: Dockerfile
+    image: central-de-api-v2-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3200:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - valeris-net
+
+  # ─────────────────────────────────────────
+  # MinIO (File Storage)
+  # ─────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-local-minio-key}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-minio-secret}
+      MINIO_PUBLIC_BUCKET: ${MINIO_PUBLIC_BUCKET:-false}
+    ports:
+      - "127.0.0.1:29200:9000"
+      - "127.0.0.1:29201:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - valeris-net
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    networks:
+      - valeris-net
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-local-minio-key}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-local-minio-secret}
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      until mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do
+        echo 'waiting for minio...';
+        sleep 3;
+      done;
+      mc mb -p local/bluetech-sign || true;
+      echo placeholder > /tmp/.keep;
+      mc cp /tmp/.keep local/bluetech-sign/assinatura/.keep || true;
+      mc cp /tmp/.keep local/bluetech-sign/documento/.keep || true;
+      mc cp /tmp/.keep local/bluetech-sign/selfie/.keep || true;
+      mc cp /tmp/.keep local/bluetech-sign/selfie-documento/.keep || true;
+      if [ "$$MINIO_PUBLIC_BUCKET" = "true" ]; then
+        mc anonymous set download local/bluetech-sign || true;
+      fi;
+      echo 'MinIO initialized!';
+      exit 0;
+      "
+
+  # ─────────────────────────────────────────
+  # pgAdmin (optional, remove in production)
+  # ─────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    profiles: ["tools"]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@valeris.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "127.0.0.1:5150:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - valeris-net
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  valeris-net:
+    driver: bridge
