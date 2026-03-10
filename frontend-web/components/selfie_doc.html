@@ -206,7 +206,7 @@ h1{font-size:clamp(20px, 6vw, 26px);font-weight:800;letter-spacing:-0.5px;margin
 const selfieDocParams = new URLSearchParams(window.location.search);
 ValerisSDK.init({
   apiUrl: selfieDocParams.get('apiUrl') || '/api',
-  token: selfieDocParams.get('token') || 'portal-demo'
+  token: selfieDocParams.get('token') || localStorage.getItem('valeris_token') || ''
 });
 let stream;
 let alignLoop = null;
@@ -214,6 +214,7 @@ let faceDetector = null;
 let faceCheckCooldown = false;
 let lastFaceCenter = null;
 let alignedSince = 0;
+let docAlignedSince = 0;
 let faceOk = false;
 let docOk = false;
 let poorCameraMode = false;
@@ -261,12 +262,15 @@ function evaluateDocument(imgData, roi, lowQualityMode){
   const y0 = clamp(Math.floor(roi.y * height), 0, height - 2);
   const rw = clamp(Math.floor(roi.w * width), 8, width - x0 - 1);
   const rh = clamp(Math.floor(roi.h * height), 8, height - y0 - 1);
-  let edgeCount = 0, bright = 0, samples = 0, sqBright = 0, greenish = 0, skinLike = 0, darkPixels = 0, veryBrightPixels = 0;
+  let edgeCount = 0, bright = 0, samples = 0, sqBright = 0, greenish = 0, skinLike = 0, darkPixels = 0, veryBrightPixels = 0, midTonePixels = 0, lowSatPixels = 0, centerSkinLike = 0, centerSamples = 0;
   for(let y = y0 + 1; y < y0 + rh - 1; y += 2){
     for(let x = x0 + 1; x < x0 + rw - 1; x += 2){
       const i = (y * width + x) * 4;
       const r = data[i], g = data[i+1], b = data[i+2];
       const gray = (r + g + b) / 3;
+      const cmax = Math.max(r, g, b);
+      const cmin = Math.min(r, g, b);
+      const sat = cmax === 0 ? 0 : ((cmax - cmin) / cmax);
       const ix = (y * width + (x - 1)) * 4;
       const iy = ((y - 1) * width + x) * 4;
       const gx = Math.abs(gray - ((data[ix] + data[ix+1] + data[ix+2]) / 3));
@@ -276,6 +280,13 @@ function evaluateDocument(imgData, roi, lowQualityMode){
       if (r > 60 && g > 35 && b > 20 && r > g && g > b && (r - b) > 15) skinLike++;
       if (gray < 45) darkPixels++;
       if (gray > 215) veryBrightPixels++;
+      if (gray >= 40 && gray <= 220) midTonePixels++;
+      if (sat < 0.28) lowSatPixels++;
+      // Center region catches "finger-only" spoofing more reliably.
+      if (x > (x0 + rw * 0.25) && x < (x0 + rw * 0.75) && y > (y0 + rh * 0.25) && y < (y0 + rh * 0.75)) {
+        if (r > 60 && g > 35 && b > 20 && r > g && g > b && (r - b) > 15) centerSkinLike++;
+        centerSamples++;
+      }
       bright += gray;
       sqBright += gray * gray;
       samples++;
@@ -287,19 +298,61 @@ function evaluateDocument(imgData, roi, lowQualityMode){
   const stdDev = Math.sqrt(Math.max(0, variance));
   const greenRatio = greenish / Math.max(1, samples);
   const skinRatio = skinLike / Math.max(1, samples);
+  const centerSkinRatio = centerSkinLike / Math.max(1, centerSamples);
   const darkRatio = darkPixels / Math.max(1, samples);
   const brightRatio = veryBrightPixels / Math.max(1, samples);
+  const midToneRatio = midTonePixels / Math.max(1, samples);
+  const lowSatRatio = lowSatPixels / Math.max(1, samples);
+
+  // Document usually creates clear straight borders near ROI edges.
+  let borderStrong = 0, borderSamples = 0;
+  const stepBorder = 3;
+  const edgeThreshold = 34;
+  const yTop = clamp(y0 + 4, 0, height - 2);
+  const yBottom = clamp(y0 + rh - 5, 1, height - 1);
+  const xLeft = clamp(x0 + 4, 0, width - 2);
+  const xRight = clamp(x0 + rw - 5, 1, width - 1);
+  for (let x = x0 + 6; x < x0 + rw - 6; x += stepBorder) {
+    const iTopA = (yTop * width + x) * 4;
+    const iTopB = ((yTop + 1) * width + x) * 4;
+    const topA = (data[iTopA] + data[iTopA + 1] + data[iTopA + 2]) / 3;
+    const topB = (data[iTopB] + data[iTopB + 1] + data[iTopB + 2]) / 3;
+    if (Math.abs(topA - topB) > edgeThreshold) borderStrong++;
+    borderSamples++;
+
+    const iBotA = ((yBottom - 1) * width + x) * 4;
+    const iBotB = (yBottom * width + x) * 4;
+    const botA = (data[iBotA] + data[iBotA + 1] + data[iBotA + 2]) / 3;
+    const botB = (data[iBotB] + data[iBotB + 1] + data[iBotB + 2]) / 3;
+    if (Math.abs(botA - botB) > edgeThreshold) borderStrong++;
+    borderSamples++;
+  }
+  for (let y = y0 + 6; y < y0 + rh - 6; y += stepBorder) {
+    const iLeftA = (y * width + xLeft) * 4;
+    const iLeftB = (y * width + (xLeft + 1)) * 4;
+    const leftA = (data[iLeftA] + data[iLeftA + 1] + data[iLeftA + 2]) / 3;
+    const leftB = (data[iLeftB] + data[iLeftB + 1] + data[iLeftB + 2]) / 3;
+    if (Math.abs(leftA - leftB) > edgeThreshold) borderStrong++;
+    borderSamples++;
+
+    const iRightA = (y * width + (xRight - 1)) * 4;
+    const iRightB = (y * width + xRight) * 4;
+    const rightA = (data[iRightA] + data[iRightA + 1] + data[iRightA + 2]) / 3;
+    const rightB = (data[iRightB] + data[iRightB + 1] + data[iRightB + 2]) / 3;
+    if (Math.abs(rightA - rightB) > edgeThreshold) borderStrong++;
+    borderSamples++;
+  }
+  const borderEdgeRatio = borderStrong / Math.max(1, borderSamples);
 
   // Reject when ROI is mostly skin/hand/face.
-  const likelyHandOrFace = skinRatio > (lowQualityMode ? 0.40 : 0.30);
-  const strictOk = edgeDensity > 0.15 && stdDev > 24 && avgBrightness > 42 && avgBrightness < 232 && darkRatio < 0.52 && brightRatio < 0.78;
-  const relaxedOk = edgeDensity > 0.085 && stdDev > 14 && avgBrightness > 28 && avgBrightness < 245 && darkRatio < 0.68 && brightRatio < 0.90;
-  const cnhHintOk = greenRatio > 0.04 && edgeDensity > 0.075 && stdDev > 14 && avgBrightness > 26 && skinRatio < 0.33;
-  const lowCamContrastHint = darkRatio > 0.08 && brightRatio > 0.06 && edgeDensity > 0.07 && stdDev > 12 && skinRatio < 0.33;
-  const ok = !likelyHandOrFace && (strictOk || (lowQualityMode && (relaxedOk || cnhHintOk || lowCamContrastHint)));
+  const likelyHandOrFace = skinRatio > 0.14 || centerSkinRatio > 0.18;
+  const strictOk = edgeDensity > 0.18 && stdDev > 26 && avgBrightness > 55 && avgBrightness < 220 && darkRatio < 0.45 && brightRatio < 0.70 && midToneRatio > 0.42 && lowSatRatio > 0.24 && borderEdgeRatio > 0.13;
+  // In low quality cameras we still keep strict requirements to avoid "face-only" bypass.
+  const lowCamStrictOk = lowQualityMode && edgeDensity > 0.15 && stdDev > 23 && avgBrightness > 50 && avgBrightness < 226 && darkRatio < 0.52 && brightRatio < 0.78 && midToneRatio > 0.35 && lowSatRatio > 0.20 && borderEdgeRatio > 0.10;
+  const ok = !likelyHandOrFace && (strictOk || lowCamStrictOk);
 
   const score = (edgeDensity * 0.50) + ((stdDev / 60) * 0.30) + ((avgBrightness > 35 && avgBrightness < 235 ? 1 : 0) * 0.12) + (greenRatio * 0.08);
-  return { ok, score };
+  return { ok, score, edgeDensity, stdDev, skinRatio, centerSkinRatio, borderEdgeRatio };
 }
 
 async function evaluateFace(videoEl, faceRoi, imgData){
@@ -362,6 +415,7 @@ async function goCamera(){
 function startAlignmentLoop(){
   stopAlignmentLoop();
   alignedSince = 0;
+  docAlignedSince = 0;
   faceOk = false;
   docOk = false;
   setFeedback(false, false);
@@ -390,7 +444,7 @@ function startAlignmentLoop(){
 
     faceOk = await evaluateFace(video, faceRoi, imgData);
     const docEval = evaluateDocument(imgData, docRoi, poorCameraMode);
-    docOk = docEval.ok || (poorCameraMode && docEval.score > 0.24);
+    docOk = docEval.ok;
 
     const fo=document.getElementById('faceOval');
     const dr=document.getElementById('docRect');
@@ -402,10 +456,15 @@ function startAlignmentLoop(){
     setFeedback(faceOk, docOk);
 
     if (faceOk && docOk) {
+      if (!docAlignedSince) docAlignedSince = Date.now();
       if (!alignedSince) alignedSince = Date.now();
       const stableMs = Date.now() - alignedSince;
+      const docStableMs = Date.now() - docAlignedSince;
       dot.className='status-dot locked';
-      if (stableMs < 900) {
+      if (docStableMs < 1500) {
+        txt.textContent='Documento detectado, mantenha por 1.5s...';
+        btn.disabled = true;
+      } else if (stableMs < 900) {
         txt.textContent='Mantenha parado...';
         btn.disabled = true;
       } else {
@@ -414,11 +473,12 @@ function startAlignmentLoop(){
       }
     } else {
       alignedSince = 0;
+      docAlignedSince = 0;
       dot.className='status-dot';
       btn.disabled = true;
       if (!faceOk && !docOk) txt.textContent='Centralize rosto e documento';
       else if (!faceOk) txt.textContent='Ajuste o rosto no oval azul';
-      else txt.textContent= poorCameraMode ? 'Aproxime e estabilize o documento por 1 segundo' : 'Aproxime o documento da caixa verde';
+      else txt.textContent= poorCameraMode ? 'Documento obrigatório: aproxime e estabilize na caixa verde' : 'Documento obrigatório: aproxime na caixa verde';
     }
 
     alignLoop = requestAnimationFrame(loop);

@@ -83,7 +83,7 @@ strong{color:var(--text)}
     <a class="nav-link" href="#selfie"><div class="nav-dot"></div> Selfie</a>
     <a class="nav-link" href="#selfie-doc"><div class="nav-dot"></div> Selfie + Doc</a>
     <div class="nav-section">API REST</div>
-    <a class="nav-link" href="#auth"><div class="nav-dot"></div> Autenticação</a>
+    <a class="nav-link" href="#auth"><div class="nav-dot"></div> Token de Acesso</a>
     <a class="nav-link" href="#captures"><div class="nav-dot"></div> Capturas</a>
     <a class="nav-link" href="#keys"><div class="nav-dot"></div> API Keys</a>
     <div class="nav-section">SDK</div>
@@ -113,23 +113,18 @@ strong{color:var(--text)}
     <!-- Quickstart -->
     <h2 id="quickstart">Quickstart — Integração em 3 passos</h2>
 
-    <h3>Passo 1 — Registre-se e obtenha um token</h3>
+    <h3>Passo 1 — Defina seu token de acesso</h3>
     <div class="code-block">
-<span class="c"># 1. Registrar usuário</span>
-<span class="k">curl</span> -X POST <span class="s">http://API_HOST/api/auth/register</span> \
-  -H <span class="s">"Content-Type: application/json"</span> \
-  -d <span class="s">'{"email":"dev@suaempresa.com","password":"SenhaSegura123","nome_completo":"Dev"}'</span>
-
-<span class="c"># 2. Fazer login e copiar o token retornado</span>
-<span class="k">curl</span> -X POST <span class="s">http://API_HOST/api/auth/login</span> \
-  -d <span class="s">'{"email":"dev@suaempresa.com","password":"SenhaSegura123"}'</span>
+<span class="c"># Modo aberto: sem login/cadastro</span>
+<span class="c"># Use um token de integração (Bearer) configurado no backend</span>
+<span class="k">export</span> <span class="v">VALERIS_TOKEN</span>=<span class="s">"SEU_TOKEN_DE_ACESSO"</span>
     </div>
 
     <h3>Passo 2 — Incorpore o microsserviço via iFrame</h3>
     <div class="code-block">
 <span class="c">&lt;!-- Coloque este código onde quiser o componente na sua página --&gt;</span>
 <span class="k">&lt;iframe</span>
-  <span class="p">src</span>=<span class="s">"http://API_HOST/?token=SEU_TOKEN_JWT&service=assinatura"</span>
+  <span class="p">src</span>=<span class="s">"http://API_HOST/?token=SEU_TOKEN_DE_ACESSO&service=assinatura"</span>
   <span class="p">width</span>=<span class="s">"700"</span>
   <span class="p">height</span>=<span class="s">"600"</span>
   <span class="p">style</span>=<span class="s">"border:none;border-radius:16px"</span>
@@ -150,7 +145,7 @@ strong{color:var(--text)}
 <span class="c">// Inicializar com seu token</span>
 <span class="v">ValerisSDK</span>.init({
   apiUrl: <span class="s">"http://API_HOST/api"</span>,
-  token: <span class="s">"SEU_TOKEN_JWT"</span>
+  token: <span class="s">"SEU_TOKEN_DE_ACESSO"</span>
 });
 
 <span class="c">// Enviar uma captura manualmente</span>
@@ -166,12 +161,8 @@ console.log(<span class="s">"Salvo no MinIO:"</span>, res.image_data);
     </div>
 
     <!-- Auth -->
-    <h2 id="auth">Autenticação</h2>
-    <p>A API usa <strong>JWT Bearer Tokens</strong>. Inclua o header <code>Authorization: Bearer &lt;token&gt;</code> em todas as requisições autenticadas.</p>
-
-    <div class="endpoint"><div class="endpoint-top"><span class="method m-post">POST</span><span class="ep-path">/api/auth/register</span></div><div class="ep-desc">Registra um novo usuário na plataforma</div></div>
-    <div class="endpoint"><div class="endpoint-top"><span class="method m-post">POST</span><span class="ep-path">/api/auth/login</span></div><div class="ep-desc">Autentica e retorna o JWT token</div></div>
-    <div class="endpoint"><div class="endpoint-top"><span class="method m-get">GET</span><span class="ep-path">/api/auth/me</span></div><div class="ep-desc">Retorna dados do usuário autenticado (requer token)</div></div>
+    <h2 id="auth">Token de Acesso</h2>
+    <p>A API opera em modo <strong>token-only</strong> (sem login/cadastro). Inclua o header <code>Authorization: Bearer &lt;token&gt;</code> em todas as requisições.</p>
 
     <!-- Captures -->
     <h2 id="captures">Capturas</h2>
@@ -250,7 +241,7 @@ console.log(<span class="s">"Salvo no MinIO:"</span>, res.image_data);
     <div class="code-block">
 ValerisSDK.init({
   apiUrl: <span class="s">"http://sua-api.com/api"</span>,  <span class="c">// URL base da API</span>
-  token: <span class="s">"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."</span>  <span class="c">// JWT opcional</span>
+  token: <span class="s">"SEU_TOKEN_DE_ACESSO"</span>  <span class="c">// Token obrigatorio</span>
 });
     </div>
 

@@ -7,7 +7,7 @@
 const ValerisSDK = {
     config: {
         apiUrl: "/api",
-        token: "portal-demo", // Default token for portal testing
+        token: "",
     },
 
     init: function(options) {
@@ -16,7 +16,33 @@ const ValerisSDK = {
         if (options?.token) ValerisSDK.config.token = options.token;
         // Keep safe defaults even if init is called with partial/empty options.
         if (!ValerisSDK.config.apiUrl) ValerisSDK.config.apiUrl = "/api";
-        if (!ValerisSDK.config.token) ValerisSDK.config.token = "portal-demo";
+        if (!ValerisSDK.config.token) {
+            try {
+                ValerisSDK.config.token = localStorage.getItem("valeris_token") || "";
+            } catch (_) {
+                ValerisSDK.config.token = "";
+            }
+        }
+        ValerisSDK.config.token = ValerisSDK.normalizeToken(ValerisSDK.config.token);
+        if (ValerisSDK.config.token) {
+            try { localStorage.setItem("valeris_token", ValerisSDK.config.token); } catch (_) {}
+        }
+    },
+
+    getLocalDevBootstrapToken: function() {
+        const host = (window.location && window.location.hostname ? window.location.hostname : "").toLowerCase();
+        if (host === "localhost" || host === "127.0.0.1") {
+            return "vl_bootstrap_change_me_please_rotate";
+        }
+        return "";
+    },
+
+    normalizeToken: function(token) {
+        const raw = (token || "").trim();
+        const bootstrap = ValerisSDK.getLocalDevBootstrapToken();
+        if (!raw) return bootstrap || "";
+        if (raw === "portal-demo" && bootstrap) return bootstrap;
+        return raw;
     },
 
     // ==========================================
@@ -250,14 +276,15 @@ const ValerisSDK = {
         selfieWithDocument: async function(dataUrl) {
             const faceResult = await this.face(dataUrl);
             const docResult = await this.document(dataUrl);
-            const confidence = (faceResult.confidence * 0.6) + (docResult.confidence * 0.4);
-            const isValid = confidence >= 45;
+            const confidence = Math.round((faceResult.confidence * 0.6) + (docResult.confidence * 0.4));
+            // Hard requirement: both face and document must be valid.
+            const isValid = !!(faceResult.isValid && docResult.isValid);
             const reasons = [];
-            if(!isValid) {
-                if(faceResult.confidence < 40) reasons.push("Rosto não detectado.");
-                if(docResult.confidence < 25) reasons.push("Documento não legível.");
+            if (!isValid) {
+                if (!faceResult.isValid) reasons.push("Rosto não detectado.");
+                if (!docResult.isValid) reasons.push("Documento obrigatório não detectado.");
             }
-            return { isValid, confidence: Math.round(confidence), reasons };
+            return { isValid, confidence, reasons };
         }
     },
 
@@ -370,11 +397,11 @@ const ValerisSDK = {
         console.log("ValerisSDK: Submitting capture", serviceType);
         const cfg = ValerisSDK.config || {};
         const apiUrl = cfg.apiUrl || "/api";
-        const token = cfg.token || "portal-demo";
+        let token = ValerisSDK.normalizeToken(cfg.token || "");
 
         if (!apiUrl || !token) {
             console.error("ValerisSDK: Missing config", cfg);
-            throw new Error("SDK não inicializado (apiUrl ou token ausentes)");
+            throw new Error("Token de acesso obrigatorio. Configure um token valido para continuar.");
         }
         
         const payload = {
@@ -407,6 +434,17 @@ const ValerisSDK = {
                     } else {
                         message = cleaned.slice(0, 180);
                     }
+                }
+            }
+            const canRetry = (response.status === 401 || response.status === 403) &&
+                /token/i.test(message) &&
+                !!ValerisSDK.getLocalDevBootstrapToken();
+            if (canRetry) {
+                const fallback = ValerisSDK.getLocalDevBootstrapToken();
+                if (fallback && fallback !== token) {
+                    ValerisSDK.config.token = fallback;
+                    try { localStorage.setItem("valeris_token", fallback); } catch (_) {}
+                    return ValerisSDK.submitCapture(serviceType, imageDataUrl, metadata);
                 }
             }
             throw new Error(message);

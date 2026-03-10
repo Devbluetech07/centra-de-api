@@ -13,7 +13,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .sidebar{width:260px;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .sidebar-header{padding:24px 20px;display:flex;align-items:center;gap:12px}
 .sidebar-logo{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;background:rgba(16,185,129,.08)}
-.sidebar-logo svg{width:22px;height:22px;color:var(--primary)}
+.sidebar-logo img{width:24px;height:24px;display:block;object-fit:contain}
 .sidebar-title{font-weight:700;font-size:16px;letter-spacing:.3px}
 .sidebar-subtitle{font-size:11px;color:var(--muted);margin-top:1px}
 .sidebar-section{padding:0 16px;margin-bottom:6px;margin-top:20px;font-size:10px;font-weight:600;color:rgba(148,163,184,.5);letter-spacing:1.5px;text-transform:uppercase}
@@ -37,6 +37,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);displ
 .view-btn.active{background:var(--primary);color:#000;font-weight:600}
 .view-btn svg{width:15px;height:15px;flex-shrink:0}
 .view-btn .btn-label{display:inline}
+.access-config{display:flex;align-items:center;gap:8px;margin-left:12px;flex-wrap:wrap}
+.access-input{height:34px;border:1px solid var(--border);background:var(--sidebar);color:var(--text);border-radius:8px;padding:0 10px;font-size:12px;min-width:180px}
+.access-input::placeholder{color:var(--muted)}
+.access-save{height:34px;padding:0 12px;border:none;border-radius:8px;background:var(--primary);color:#000;font-weight:600;cursor:pointer;font-size:12px}
+.access-hint{font-size:11px;color:var(--muted)}
+.quickstart{margin:0 24px 14px;border:1px solid var(--border);background:var(--card);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.quickstep{font-size:12px;color:var(--muted)}
+.quickstep strong{color:var(--text)}
+.status-chip{padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid var(--border)}
+.status-ok{color:var(--primary);background:var(--primary10)}
+.status-missing{color:var(--yellow);background:rgba(245,158,11,.12)}
+.copy-btn{height:30px;padding:0 10px;border:none;border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;cursor:pointer}
 /* Preview */
 .preview{flex:1;display:flex;align-items:center;justify-content:center;padding:40px;overflow:auto;perspective:1200px}
 .frame-component{width:100%;height:100%;max-width:960px;border:none;border-radius:0;background:transparent;transition:all 0.5s cubic-bezier(0.4, 0, 0.2, 1)}
@@ -70,7 +82,7 @@ body.embed-mode #frame.frame-component{max-width:none;height:100%}
 <aside class="sidebar">
     <div class="sidebar-header">
         <div class="sidebar-logo">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            <img src="assets/logo-valeris.svg" alt="Valeris Logo">
         </div>
         <div>
             <div class="sidebar-title">Valeris</div>
@@ -134,8 +146,21 @@ body.embed-mode #frame.frame-component{max-width:none;height:100%}
                 <span class="btn-label">Mobile</span>
             </button>
         </div>
+        <div class="access-config" id="accessConfig">
+            <input id="apiUrlInput" class="access-input" placeholder="API URL (ex: /api ou https://api.exemplo.com/api)">
+            <input id="tokenInput" class="access-input" placeholder="Token de acesso (Bearer)">
+            <button class="access-save" onclick="saveAccessConfig()">Salvar</button>
+            <span class="access-hint">Sem login: apenas token</span>
+        </div>
 
     </header>
+    <div class="quickstart">
+        <span class="quickstep"><strong>1)</strong> Configure API URL</span>
+        <span class="quickstep"><strong>2)</strong> Cole seu token</span>
+        <span class="quickstep"><strong>3)</strong> Escolha o serviço na lateral</span>
+        <span id="tokenStatusChip" class="status-chip status-missing">Token pendente</span>
+        <button class="copy-btn" onclick="copyEmbedSnippet()">Copiar iframe</button>
+    </div>
     <div class="preview" id="preview">
         <div id="frame" class="frame-component">
             <iframe id="iframe" src="components/assinatura.html" allow="camera;microphone;geolocation"></iframe>
@@ -148,7 +173,28 @@ const queryParams = new URLSearchParams(window.location.search);
 const embedService = queryParams.get('service');
 const embedToken = queryParams.get('token');
 const embedApiUrl = queryParams.get('apiUrl');
+const tokenStorageKey = 'valeris_token';
+const apiUrlStorageKey = 'valeris_api_url';
+const componentVersion = '20260309-keys-persist-v2';
+const iframeAllow = 'camera;microphone;geolocation;clipboard-read;clipboard-write';
 const services = ['assinatura', 'documento', 'selfie', 'selfie_doc'];
+let currentPage = 'assinatura';
+
+function localBootstrapToken() {
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1') {
+        return 'vl_bootstrap_change_me_please_rotate';
+    }
+    return '';
+}
+
+function normalizeToken(token) {
+    const raw = (token || '').trim();
+    const bootstrap = localBootstrapToken();
+    if (!raw) return bootstrap || '';
+    if (raw === 'portal-demo' && bootstrap) return bootstrap;
+    return raw;
+}
 
 function normalizeService(value) {
     if (!value) return null;
@@ -159,10 +205,68 @@ function normalizeService(value) {
 function buildIframeSrc(page) {
     const normalized = normalizeService(page);
     const params = new URLSearchParams();
-    if (embedToken) params.set('token', embedToken);
-    if (embedApiUrl) params.set('apiUrl', embedApiUrl);
+    const token = getCurrentToken();
+    const apiUrl = getCurrentApiUrl();
+    if (token) params.set('token', token);
+    if (apiUrl) params.set('apiUrl', apiUrl);
+    params.set('v', componentVersion);
     const qs = params.toString();
     return 'components/' + normalized + '.html' + (qs ? '?' + qs : '');
+}
+
+function getCurrentToken() {
+    if (embedToken) return embedToken;
+    const input = document.getElementById('tokenInput');
+    if (input && input.value) return normalizeToken(input.value);
+    const stored = localStorage.getItem(tokenStorageKey) || '';
+    return normalizeToken(stored);
+}
+
+function getCurrentApiUrl() {
+    if (embedApiUrl) return embedApiUrl;
+    const input = document.getElementById('apiUrlInput');
+    if (input && input.value) return input.value.trim();
+    return localStorage.getItem(apiUrlStorageKey) || '/api';
+}
+
+function updateTokenStatus() {
+    const chip = document.getElementById('tokenStatusChip');
+    if (!chip) return;
+    if (getCurrentToken()) {
+        chip.className = 'status-chip status-ok';
+        chip.textContent = 'Token configurado';
+    } else {
+        chip.className = 'status-chip status-missing';
+        chip.textContent = 'Token pendente';
+    }
+}
+
+async function copyEmbedSnippet() {
+    const service = normalizeService(currentPage) || 'assinatura';
+    const token = getCurrentToken();
+    const apiUrl = getCurrentApiUrl();
+    const origin = window.location.origin;
+    const src = `${origin}/?service=${service}&token=${encodeURIComponent(token)}&apiUrl=${encodeURIComponent(apiUrl)}`;
+    const snippet = `<iframe src="${src}" width="760" height="640" style="border:none;border-radius:16px" allow="camera;microphone;geolocation"></iframe>`;
+    try {
+        await navigator.clipboard.writeText(snippet);
+        alert('Snippet iframe copiado!');
+    } catch (_) {
+        window.prompt('Copie o snippet abaixo:', snippet);
+    }
+}
+
+function saveAccessConfig() {
+    if (embedToken || embedApiUrl) return;
+    const tokenInput = document.getElementById('tokenInput');
+    const apiUrlInput = document.getElementById('apiUrlInput');
+    const token = (tokenInput?.value || '').trim();
+    const apiUrl = (apiUrlInput?.value || '').trim() || '/api';
+    localStorage.setItem(tokenStorageKey, normalizeToken(token));
+    localStorage.setItem(apiUrlStorageKey, apiUrl);
+    updateTokenStatus();
+    const iframe = document.getElementById('iframe');
+    if (iframe) iframe.src = buildIframeSrc(currentPage);
 }
 
 function nav(page, el) {
@@ -174,6 +278,7 @@ function nav(page, el) {
     
     const switcher = document.getElementById('viewSwitcher');
     
+    currentPage = page;
     // Update iframe src
     const newSrc = buildIframeSrc(page);
     
@@ -182,7 +287,7 @@ function nav(page, el) {
         // When in management, always use full component view
         const frame = document.getElementById('frame');
         frame.className = 'frame-component';
-        frame.innerHTML = '<iframe id="iframe" src="' + newSrc + '" allow="camera;microphone;geolocation"></iframe>';
+        frame.innerHTML = '<iframe id="iframe" src="' + newSrc + '" allow="' + iframeAllow + '"></iframe>';
     } else {
         switcher.style.display = 'flex';
         // Current view (desktop/mobile/component) stays, just update src
@@ -199,12 +304,23 @@ function nav(page, el) {
 
 // Initial state
 window.onload = () => {
+    const tokenInput = document.getElementById('tokenInput');
+    const apiUrlInput = document.getElementById('apiUrlInput');
+    if (tokenInput && !embedToken) {
+        let token = normalizeToken(localStorage.getItem(tokenStorageKey) || '');
+        if (token) localStorage.setItem(tokenStorageKey, token);
+        tokenInput.value = token;
+    }
+    if (apiUrlInput && !embedApiUrl) apiUrlInput.value = localStorage.getItem(apiUrlStorageKey) || '/api';
+    if (tokenInput) tokenInput.addEventListener('input', updateTokenStatus);
+    updateTokenStatus();
+
     const initialService = normalizeService(embedService);
     if (initialService && services.includes(initialService)) {
         document.body.classList.add('embed-mode');
         const frame = document.getElementById('frame');
         frame.className = 'frame-component';
-        frame.innerHTML = '<iframe id="iframe" src="' + buildIframeSrc(initialService) + '" allow="camera;microphone;geolocation"></iframe>';
+        frame.innerHTML = '<iframe id="iframe" src="' + buildIframeSrc(initialService) + '" allow="' + iframeAllow + '"></iframe>';
         return;
     }
     document.getElementById('viewSwitcher').style.display = 'flex';
@@ -218,13 +334,13 @@ function setView(type, el) {
     
     if (type === 'desktop') {
         frame.className = 'frame-desktop';
-        frame.innerHTML = '<div class="bezel"><iframe id="iframe" src="' + currentSrc + '" allow="camera;microphone;geolocation"></iframe></div><div class="laptop-base"></div>';
+        frame.innerHTML = '<div class="bezel"><iframe id="iframe" src="' + currentSrc + '" allow="' + iframeAllow + '"></iframe></div><div class="laptop-base"></div>';
     } else if (type === 'mobile') {
         frame.className = 'frame-mobile';
-        frame.innerHTML = '<div class="notch"></div><div class="screen"><iframe id="iframe" src="' + currentSrc + '" allow="camera;microphone;geolocation"></iframe></div>';
+        frame.innerHTML = '<div class="notch"></div><div class="screen"><iframe id="iframe" src="' + currentSrc + '" allow="' + iframeAllow + '"></iframe></div>';
     } else {
         frame.className = 'frame-component';
-        frame.innerHTML = '<iframe id="iframe" src="' + currentSrc + '" allow="camera;microphone;geolocation"></iframe>';
+        frame.innerHTML = '<iframe id="iframe" src="' + currentSrc + '" allow="' + iframeAllow + '"></iframe>';
     }
 }
 </script>

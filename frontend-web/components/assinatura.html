@@ -174,7 +174,7 @@ h1{font-size:clamp(20px, 6vw, 26px);font-weight:800;letter-spacing:-0.5px;margin
 const assinaturaParams = new URLSearchParams(window.location.search);
 ValerisSDK.init({
   apiUrl: assinaturaParams.get('apiUrl') || '/api',
-  token: assinaturaParams.get('token') || 'portal-demo'
+  token: assinaturaParams.get('token') || localStorage.getItem('valeris_token') || ''
 });
 const canvas=document.getElementById('pad'), ctx=canvas.getContext('2d');
 let drawing=false;

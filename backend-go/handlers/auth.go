@@ -3,11 +3,11 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"os"
 	"time"
 
 	"backend-go/database"
 	"backend-go/models"
+	"backend-go/security"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -21,21 +21,17 @@ type AuthRequest struct {
 	NomeCompleto string `json:"nome_completo"`
 }
 
-func getSecret() string {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "changeme-secret"
-	}
-	return secret
-}
-
 func sign(userId string, email string) (string, error) {
+	secret, err := security.GetJWTSecret()
+	if err != nil {
+		return "", err
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"userId": userId,
 		"email":  email,
 		"exp":    time.Now().AddDate(0, 1, 0).Unix(), // 30d
 	})
-	return token.SignedString([]byte(getSecret()))
+	return token.SignedString([]byte(secret))
 }
 
 func Register(c *gin.Context) {
@@ -68,13 +64,17 @@ func Register(c *gin.Context) {
 		"INSERT INTO users (email, password_hash, nome_completo) VALUES ($1,$2,$3) RETURNING id, email",
 		body.Email, string(hash), body.NomeCompleto,
 	).Scan(&user.ID, &user.Email)
-	
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Erro interno"})
 		return
 	}
 
-	tokenStr, _ := sign(user.ID, user.Email)
+	tokenStr, err := sign(user.ID, user.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Configuracao de autenticacao invalida"})
+		return
+	}
 	c.JSON(http.StatusCreated, gin.H{"token": tokenStr, "user": user})
 }
 
@@ -92,7 +92,7 @@ func Login(c *gin.Context) {
 	err := database.Pool.QueryRow(ctx,
 		"SELECT id, email, password_hash FROM users WHERE email=$1", body.Email,
 	).Scan(&user.ID, &user.Email, &passwordHash)
-	
+
 	if err == pgx.ErrNoRows {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "Credenciais inválidas"})
 		return
@@ -106,7 +106,11 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	tokenStr, _ := sign(user.ID, user.Email)
+	tokenStr, err := sign(user.ID, user.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Configuracao de autenticacao invalida"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"token": tokenStr, "user": user})
 }
 
@@ -122,7 +126,7 @@ func Me(c *gin.Context) {
 	err := database.Pool.QueryRow(ctx,
 		"SELECT id, email, nome_completo FROM users WHERE id=$1", userId,
 	).Scan(&user.ID, &user.Email, &user.NomeCompleto)
-	
+
 	if err == pgx.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"message": "Usuário não encontrado"})
 		return

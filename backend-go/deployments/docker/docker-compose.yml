@@ -1,0 +1,56 @@
+name: valeris-backend
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: valeris
+      POSTGRES_USER: valeris
+      POSTGRES_PASSWORD: valerispass
+    ports:
+      - "127.0.0.1:5542:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U valeris -d valeris"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "127.0.0.1:29200:9000"
+      - "127.0.0.1:29201:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deployments/docker/Dockerfile
+    ports:
+      - "127.0.0.1:3201:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: valeris
+      DB_USER: valeris
+      DB_PASSWORD: valerispass
+      JWT_SECRET: troque_este_segredo_com_no_minimo_32_caracteres
+      FRONTEND_URLS: http://127.0.0.1:3200
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_USE_SSL: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy

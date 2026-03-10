@@ -138,7 +138,6 @@ h1{font-size:clamp(20px, 6vw, 26px);font-weight:800;letter-spacing:-0.5px;margin
     </div>
     <h2 style="font-size:22px;font-weight:800;color:var(--cyan);margin-bottom:8px">Identidade Verificada!</h2>
     <p style="color:var(--muted);font-size:14px;margin-bottom:32px">Sua selfie foi capturada e salva com segurança.</p>
-    <button class="btn btn-primary" style="max-width:220px;margin:0 auto" onclick="restart()">Nova Verificação</button>
   </div>
 </div>
 
@@ -155,7 +154,7 @@ h1{font-size:clamp(20px, 6vw, 26px);font-weight:800;letter-spacing:-0.5px;margin
 const selfieParams = new URLSearchParams(window.location.search);
 ValerisSDK.init({
   apiUrl: selfieParams.get('apiUrl') || '/api',
-  token: selfieParams.get('token') || 'portal-demo'
+  token: selfieParams.get('token') || localStorage.getItem('valeris_token') || ''
 });
 let stream, alignLoop=null, faceDetector=null, alignedSince=0, faceAligned=false, submitting=false;
 
